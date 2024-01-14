@@ -48,7 +48,6 @@ def checkMatch(subj,db):
 
 def findMatch(subj,databases):
     printImg(subj)
-    found = None
     goldenScore = 0
     silverScore = 0
     scores={"label":[], "score":[]}
@@ -56,37 +55,40 @@ def findMatch(subj,databases):
         label = db['label']
         path = db['path']
         score = checkMatch(subj,path)
-        print(f"findMatch: label {label} score={score}")
+        #print(f"findMatch: label {label} score={score}")
         if (score >0.45):
-            print(f"findMatch: this might be {label} score={score}")
+            print(f"findMatch: maybe '{label}' score={score}")
             scores['label'].append(label)
             scores['score'].append(score)
 #   print(f"findMatch: scores={scores} scores['label']={scores['label']} scores['score']={scores['score']}")
+
+    maxScore = None
+    maxLabel = None
+    maxScoreLead = 0
     if (len(scores['label'])==0):
-        found = None
-    elif (len(scores['label'])==1):
-        found = scores['label'][0]
-    else: #several significant scores
+        result = None
+    else:
         maxScore = max(scores['score'])
         maxScoreIdx = scores['score'].index(maxScore)
         maxLabel = scores['label'][maxScoreIdx]
-        
-        del scores['label'][maxScoreIdx]
-        del scores['score'][maxScoreIdx]
-        
-        maxScore2 = max(scores['score'])
-        
-        print(f"findMatch: max={maxLabel} score={maxScore} lead={maxScore - maxScore2}")
-        if (maxScore - maxScore2 > 0.1):
-            return maxLabel
+        if (len(scores['label'])>1):
+            del scores['label'][maxScoreIdx]
+            del scores['score'][maxScoreIdx]
+            maxScoreLead = maxScore - max(scores['score'])
         else:
-            return None
+            maxScoreLead = maxScore
+            
+        if (maxScoreLead > 0.1):
+            result = maxLabel
+        else:
+            result = None
+    print(f"findMatch - finalize: result={result} maxLabel='{maxLabel}' score={maxScore} lead={maxScoreLead}")
 
-#    if (found == None):
+#    if (result == None):
 #        print(f"findMatch: this is unknown")
 #    else:
 #        print(f"findMatch: this is {found}")
-    return found
+    return result
 
 def createDatabases(dbRoot):
     if (not os.path.exists(dbRoot)):
@@ -99,7 +101,7 @@ def createDatabases(dbRoot):
         invalidateFile=os.path.join(path,".invalidate")
         if os.path.exists(invalidateFile):
             os.remove(invalidateFile)
-            print(f"invalidating path:{path}")
+            print(f"invalidating db '{path}'")
             pickleFile=os.path.join(path,"representations_vgg_face.pkl")
             if os.path.exists(pickleFile):
                 os.remove(pickleFile)
@@ -152,8 +154,8 @@ def extractFaces(videoPath,skip,resumeFrame,db):
             frameIndex = frameIndex + 1
             if (frameIndex % 500 == 0):
                 elapsed =  time.time()  - sTime
-                fps = frameIndex / elapsed
-                print(f"Total frames processed {frameIndex} ({frameIndex*100/ totalFrames}%) faces={len(faces)} elapsed={time.strftime('%H:%M:%S', time.gmtime(elapsed))} fps={fps}")
+                fps = int(frameIndex / elapsed)
+                print(f"extractFaces - progress: frames={frameIndex} ({int(frameIndex*100/ totalFrames)}%) faces={len(faces)} elapsed={time.strftime('%H:%M:%S', time.gmtime(elapsed))} fps={fps}")
                 
                 
             readSuccess, frame = cap.read()
@@ -210,7 +212,7 @@ def extractFaces(videoPath,skip,resumeFrame,db):
                         faceTargetDir=targetDir
                     else:
                         faceTargetDir= os.path.join(targetDir, dbMatch)
-                    print(f"New face found: frame {frameIndex}: confidence={confidence} label={faceLabel} dbMatch={dbMatch}")
+                    print(f"extractFaces - new face: confidence={confidence} frame={frameIndex} label={faceLabel} dbMatch={dbMatch}")
                     #plt.imshow(faceFrame)
                     #plt.show()
                     writeFace(faceFrame,faceLabel,faceTargetDir,videoFileNameNoExt)
