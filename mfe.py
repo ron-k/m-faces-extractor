@@ -74,14 +74,18 @@ def findMatch(subj,databases):
         if (len(scores['label'])>1):
             del scores['label'][maxScoreIdx]
             del scores['score'][maxScoreIdx]
-            maxScoreLead = maxScore - max(scores['score'])
+            
+            max2Score = max(scores['score'])
+            max2ScoreIdx = scores['score'].index(max2Score)
+            max2Label = scores['label'][max2ScoreIdx]
+            maxScoreLead = maxScore - max2Score
         else:
             maxScoreLead = maxScore
             
         if (maxScoreLead > 0.1):
             result = maxLabel
         else:
-            result = None
+            result = f"{maxLabel} OR {max2Label}"
     print(f"findMatch - finalize: result={result} maxLabel='{maxLabel}' score={maxScore} lead={maxScoreLead}")
 
 #    if (result == None):
