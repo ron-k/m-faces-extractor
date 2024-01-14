@@ -159,7 +159,8 @@ def extractFaces(videoPath,skip,resumeFrame,db):
             if (frameIndex % 500 == 0):
                 elapsed =  time.time()  - sTime
                 fps = int(frameIndex / elapsed)
-                print(f"extractFaces - progress: frames={frameIndex} ({int(frameIndex*100/ totalFrames)}%) faces={len(faces)} elapsed={time.strftime('%H:%M:%S', time.gmtime(elapsed))} fps={fps}")
+                eta = int ((totalFrames - frameIndex) / fps)
+                print(f"extractFaces - progress: frames={frameIndex} ({int(frameIndex*100/ totalFrames)}%) faces={len(faces)} fps={fps} elapsed={time.strftime('%H:%M:%S', time.gmtime(elapsed))} eta={time.strftime('%H:%M:%S', time.gmtime(eta))}")
                 
                 
             readSuccess, frame = cap.read()
