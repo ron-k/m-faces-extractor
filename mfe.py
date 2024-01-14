@@ -125,6 +125,7 @@ def isFaceKnownLocally(face, db):
     return False
 def checkAlreadyProcessed(videoPath):
     videoParentDir = PurePath(videoPath).parent
+    videoFileNameNoExt = Path(videoPath).stem
     targetDir = os.path.join(videoParentDir,f"{videoFileNameNoExt}-faces")
 
     if os.path.exists(targetDir):
