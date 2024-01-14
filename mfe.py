@@ -123,7 +123,13 @@ def isFaceKnownLocally(face, db):
         if (result["verified"]):
             return True
     return False
+def checkAlreadyProcessed(videoPath):
+    videoParentDir = PurePath(videoPath).parent
+    targetDir = os.path.join(videoParentDir,f"{videoFileNameNoExt}-faces")
 
+    if os.path.exists(targetDir):
+        raise Exception(f"seems already been processed: '{videoPath}'")
+        
 def extractFaces(videoPath,skip,resumeFrame,db):
     sTime = time.time()
 
@@ -131,8 +137,6 @@ def extractFaces(videoPath,skip,resumeFrame,db):
     videoParentDir = PurePath(videoPath).parent
     targetDir = os.path.join(videoParentDir,f"{videoFileNameNoExt}-faces")
 
-    if os.path.exists(targetDir) and resumeFrame==0:
-        raise Exception(f"seems already been processed: '{videoPath}'")
     if not os.path.exists(targetDir):
         os.makedirs(targetDir)
         with open(os.path.join(targetDir,'.invalidate'), 'w') as fp:
@@ -238,12 +242,15 @@ def writeFace(face, faceLabel ,targetDir, origin):
     cv2.imwrite(outputPath, face[:, :, ::-1] * 255)
 
 def main(args):
-
     videoPath = args["input"]
     skip = int(args["skip"])
     resumeFrame = int(args["resume"])
     dbPaths = args["database"]
-    db=createDatabases(dbPaths)
+    
+    if (resumeFrame==0):
+        checkAlreadyProcessed(videoPath)
+    
+    db = createDatabases(dbPaths)
     extractFaces(videoPath,skip,resumeFrame,db)
  
 if __name__ == "__main__":
