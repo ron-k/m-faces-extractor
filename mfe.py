@@ -13,13 +13,97 @@ import math
 import time
 
 
-def classify(img):
-    res=DeepFace.analyze(img,actions=("age","gender"), enforce_detection = False, detector_backend='retinaface')
-    print(f"img={img} res={res}")
+
+def classify(path):
+    res=DeepFace.analyze(path,actions=("age","gender"), enforce_detection = False)
     return {"age" : res[0]["age"], "gender":res[0]["dominant_gender"]}
 
-    
-def isFaceKnown(face, db):
+
+def printImg(path):
+    if (True):
+        return
+    #img = cv2.imread(path, cv2.IMREAD_COLOR)
+    #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    cl=classify(path)
+    if (cl["gender"]=='Man'):
+        faceLabel="M"
+    else:
+        faceLabel="F"
+    clStr=f"{faceLabel}_{cl['age']}"
+    print(f"classify={clStr}")
+    #plt.imshow(img)
+    #plt.show()
+
+def checkMatch(subj,db):
+    results=DeepFace.find(subj, db, enforce_detection = False, silent = True)
+    #print(f"DeepFace.find: results={results}")
+    #for result in results:
+        #for identity in result.identity:
+            #print(f"result: {identity}")
+            #printImg(identity)
+    if (results[0]['VGG-Face_cosine'].empty):
+        return 0
+    return 1-results[0]['VGG-Face_cosine'][0]
+
+
+def findMatch(subj,databases):
+    printImg(subj)
+    found = None
+    goldenScore = 0
+    silverScore = 0
+    scores={"label":[], "score":[]}
+    for db in databases:
+        label = db['label']
+        path = db['path']
+        score = checkMatch(subj,path)
+        print(f"findMatch: label {label} score={score}")
+        if (score >0.45):
+            print(f"findMatch: this might be {label} score={score}")
+            scores['label'].append(label)
+            scores['score'].append(score)
+#   print(f"findMatch: scores={scores} scores['label']={scores['label']} scores['score']={scores['score']}")
+    if (len(scores['label'])==0):
+        found = None
+    elif (len(scores['label'])==1):
+        found = scores['label'][0]
+    else: #several significant scores
+        maxScore = max(scores['score'])
+        maxScoreIdx = scores['score'].index(maxScore)
+        maxLabel = scores['label'][maxScoreIdx]
+        
+        del scores['label'][maxScoreIdx]
+        del scores['score'][maxScoreIdx]
+        
+        maxScore2 = max(scores['score'])
+        
+        print(f"findMatch: max={maxLabel} score={maxScore}  nextScore={maxScore2}")
+        if (maxScore - maxScore2 > 0.1):
+            return maxLabel
+        else:
+            return None
+
+#    if (found == None):
+#        print(f"findMatch: this is unknown")
+#    else:
+#        print(f"findMatch: this is {found}")
+    return found
+
+def createDatabases(dbRoot):
+    if (not os.path.exists(dbRoot)):
+        raise Exception(f"no such path '{dbRoot}'")
+    databases=[]
+    for dirName in next(os.walk(dbRoot))[1]:
+        path=os.path.join(dbRoot,dirName)
+        pickleFile=os.path.join(path,"representations_vgg_face.pkl")
+        if os.path.exists(pickleFile):
+            os.remove(pickleFile)
+        db={"path":path, "label":dirName}
+        databases.append(db)
+    if (len(databases)==0):
+        print(f"no entries in the database")
+    return databases
+
+def isFaceKnownLocally(face, db):
     for index, known_face in enumerate(db):
         result = DeepFace.verify(img1_path = face, img2_path = known_face,
                            enforce_detection = False)
@@ -28,7 +112,7 @@ def isFaceKnown(face, db):
             return True
     return False
 
-def extract_faces(videoPath,skip):
+def extractFaces(videoPath,skip,db):
     sTime = time.time()
 
     videoFileNameNoExt = Path(videoPath).stem
@@ -40,22 +124,25 @@ def extract_faces(videoPath,skip):
 
     faces = []
     cap = cv2.VideoCapture(videoPath) # read video file
+    if (not cap.isOpened()):
+        raise Exception(f"could not open video file '{videoPath}'")
+    totalFrames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     fps = math.ceil(fps)
     path = os.path.basename(videoPath)
-    i = 0
+    frameIndex = 0
 
     prevFrameFaces=[]
     while cap.isOpened():
-            i = i + 1
+            frameIndex = frameIndex + 1
 
             ret, frame = cap.read()
 
-            if i > 10000000:
+            if frameIndex > 10000000:
                 break
             if not ret:
                 break
-            if skip > 0 and i % skip!=0:
+            if skip > 0 and frameIndex % skip!=0:
                 continue
 
             face_props = DeepFace.extract_faces(img_path = frame,
@@ -76,11 +163,11 @@ def extract_faces(videoPath,skip):
     #                 plt.show()
                     if (len(faces)>0):
                         isFaceNew = True
-    #                     if (isFaceKnown(faceFrame,prevFrameFaces)):
+    #                     if (isFaceKnownLocally(faceFrame,prevFrameFaces)):
     #                         print(f"Was already processed in previous frame")
     #                         isFaceNew = False
     #                         break
-                        if (isFaceKnown(faceFrame,faces)):
+                        if (isFaceKnownLocally(faceFrame,faces)):
     #                         print(f"Is already known")
                             isFaceNew = False
                             break
@@ -98,38 +185,48 @@ def extract_faces(videoPath,skip):
                     #    gender="F"
                     #faceLabel=f"{gender}{len(faces)}_{cl['age']}yo"
                     # end: disabled until fixed
-                    faceLabel=f"face_{len(faces)}"
-                    print(f"New face found: frame {i}: confidence={confidence} label={faceLabel}")
+                    
+                    dbMatch=findMatch(faceFrame,db)
+                    faceLabel=f"{frameIndex}_{len(faces)}"
+                    if (dbMatch== None):
+                        faceTargetDir=targetDir
+                    else:
+                        faceTargetDir= os.path.join(targetDir, dbMatch)
+                    print(f"New face found: frame {frameIndex}: confidence={confidence} label={faceLabel}")
                     #plt.imshow(faceFrame)
                     #plt.show()
-                    writeFace(faceFrame,faceLabel,targetDir,videoFileNameNoExt)
+                    writeFace(faceFrame,faceLabel,faceTargetDir,videoFileNameNoExt)
                     faces.append(faceFrame)
                     
                 
             prevFrameFaces = thisFrameFaces
-            if (i % 10 == 0) and i > 1:
+            if (frameIndex % 10 == 0) and frameIndex > 1:
                 elapsed =  time.time()  - sTime
-                fps = i / elapsed
-                print(f"Total frames processed {i} faces={len(faces)} elapsed={time.strftime('%H:%M:%S', time.gmtime(elapsed))} fps={fps}")
+                fps = frameIndex / elapsed
+                print(f"Total frames processed {frameIndex} ({frameIndex*100/ totalFrames}%) faces={len(faces)} elapsed={time.strftime('%H:%M:%S', time.gmtime(elapsed))} fps={fps}")
                 
 
 def writeFace(face, faceLabel ,targetDir, origin):
-
-        targetFilename=f"{faceLabel}_{origin}.png"
-        outputPath = os.path.join(targetDir, targetFilename)
-        cv2.imwrite(outputPath, face[:, :, ::-1] * 255)
+    if not os.path.exists(targetDir):
+        os.makedirs(targetDir)
+    targetFilename=f"{origin}_{faceLabel}.png"
+    outputPath = os.path.join(targetDir, targetFilename)
+    cv2.imwrite(outputPath, face[:, :, ::-1] * 255)
 
 def main(args):
 
-    video_path = args["input"]
+    videoPath = args["input"]
     skip = int(args["skip"])
-    extract_faces(video_path,skip)
-    
+    dbPaths = args["database"]
+    db=createDatabases(dbPaths)
+    extractFaces(videoPath,skip,db)
+ 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
 
   # options
   parser.add_argument("-i", "--input", required=True, help="path to input directory or file")
+  parser.add_argument("-db", "--database",  required=True, help="Path to database")
   parser.add_argument("-s", "--skip", default=0, help="amount of frames to skip in between captures")
   args = vars(parser.parse_args())
   main(args)
