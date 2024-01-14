@@ -76,7 +76,7 @@ def findMatch(subj,databases):
         
         maxScore2 = max(scores['score'])
         
-        print(f"findMatch: max={maxLabel} score={maxScore}  nextScore={maxScore2}")
+        print(f"findMatch: max={maxLabel} score={maxScore} lead={maxScore - maxScore2}")
         if (maxScore - maxScore2 > 0.1):
             return maxLabel
         else:
@@ -94,9 +94,13 @@ def createDatabases(dbRoot):
     databases=[]
     for dirName in next(os.walk(dbRoot))[1]:
         path=os.path.join(dbRoot,dirName)
-        pickleFile=os.path.join(path,"representations_vgg_face.pkl")
-        if os.path.exists(pickleFile):
-            os.remove(pickleFile)
+        invalidateFile=os.path.join(path,".invalidate")
+        if os.path.exists(invalidateFile):
+            os.remove(invalidateFile)
+            print(f"invalidating path:{path}")
+            pickleFile=os.path.join(path,"representations_vgg_face.pkl")
+            if os.path.exists(pickleFile):
+                os.remove(pickleFile)
         db={"path":path, "label":dirName}
         databases.append(db)
     if (len(databases)==0):
@@ -112,37 +116,49 @@ def isFaceKnownLocally(face, db):
             return True
     return False
 
-def extractFaces(videoPath,skip,db):
+def extractFaces(videoPath,skip,resumeFrame,db):
     sTime = time.time()
 
     videoFileNameNoExt = Path(videoPath).stem
     videoParentDir = PurePath(videoPath).parent
     targetDir = os.path.join(videoParentDir,f"{videoFileNameNoExt}-faces")
 
+    if os.path.exists(targetDir) and resumeFrame==0:
+        raise Exception(f"seems already been processed: '{videoPath}'")
     if not os.path.exists(targetDir):
         os.makedirs(targetDir)
+        with open(os.path.join(targetDir,'.invalidate'), 'w') as fp:
+            pass
 
     faces = []
     cap = cv2.VideoCapture(videoPath) # read video file
     if (not cap.isOpened()):
         raise Exception(f"could not open video file '{videoPath}'")
     totalFrames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
     fps = cap.get(cv2.CAP_PROP_FPS)
     fps = math.ceil(fps)
     path = os.path.basename(videoPath)
-    frameIndex = 0
+
+    if (resumeFrame > totalFrames):
+        raise Exception(f"invalid resume frame: {resumeFrame}")
+    cap.set(cv2.CAP_PROP_POS_FRAMES, resumeFrame-1)
+    frameIndex = resumeFrame
 
     prevFrameFaces=[]
     while cap.isOpened():
             frameIndex = frameIndex + 1
+            if (frameIndex % 500 == 0):
+                elapsed =  time.time()  - sTime
+                fps = frameIndex / elapsed
+                print(f"Total frames processed {frameIndex} ({frameIndex*100/ totalFrames}%) faces={len(faces)} elapsed={time.strftime('%H:%M:%S', time.gmtime(elapsed))} fps={fps}")
+                
+                
+            readSuccess, frame = cap.read()
 
-            ret, frame = cap.read()
-
-            if frameIndex > 10000000:
+            if not readSuccess:
                 break
-            if not ret:
-                break
-            if skip > 0 and frameIndex % skip!=0:
+            if resumeFrame > frameIndex or (skip > 0 and frameIndex % skip!=0):
                 continue
 
             face_props = DeepFace.extract_faces(img_path = frame,
@@ -192,7 +208,7 @@ def extractFaces(videoPath,skip,db):
                         faceTargetDir=targetDir
                     else:
                         faceTargetDir= os.path.join(targetDir, dbMatch)
-                    print(f"New face found: frame {frameIndex}: confidence={confidence} label={faceLabel}")
+                    print(f"New face found: frame {frameIndex}: confidence={confidence} label={faceLabel} dbMatch={dbMatch}")
                     #plt.imshow(faceFrame)
                     #plt.show()
                     writeFace(faceFrame,faceLabel,faceTargetDir,videoFileNameNoExt)
@@ -200,15 +216,14 @@ def extractFaces(videoPath,skip,db):
                     
                 
             prevFrameFaces = thisFrameFaces
-            if (frameIndex % 10 == 0) and frameIndex > 1:
-                elapsed =  time.time()  - sTime
-                fps = frameIndex / elapsed
-                print(f"Total frames processed {frameIndex} ({frameIndex*100/ totalFrames}%) faces={len(faces)} elapsed={time.strftime('%H:%M:%S', time.gmtime(elapsed))} fps={fps}")
+
                 
 
 def writeFace(face, faceLabel ,targetDir, origin):
     if not os.path.exists(targetDir):
         os.makedirs(targetDir)
+        with open(os.path.join(targetDir,'.invalidate'), 'w') as fp:
+            pass
     targetFilename=f"{origin}_{faceLabel}.png"
     outputPath = os.path.join(targetDir, targetFilename)
     cv2.imwrite(outputPath, face[:, :, ::-1] * 255)
@@ -217,16 +232,18 @@ def main(args):
 
     videoPath = args["input"]
     skip = int(args["skip"])
+    resumeFrame = int(args["resume"])
     dbPaths = args["database"]
     db=createDatabases(dbPaths)
-    extractFaces(videoPath,skip,db)
+    extractFaces(videoPath,skip,resumeFrame,db)
  
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
 
   # options
-  parser.add_argument("-i", "--input", required=True, help="path to input directory or file")
   parser.add_argument("-db", "--database",  required=True, help="Path to database")
+  parser.add_argument("-i", "--input", required=True, help="path to input directory or file")
   parser.add_argument("-s", "--skip", default=0, help="amount of frames to skip in between captures")
+  parser.add_argument("-r", "--resume", default=0, help="resume from this frame")
   args = vars(parser.parse_args())
   main(args)
