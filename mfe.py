@@ -93,6 +93,8 @@ def createDatabases(dbRoot):
         raise Exception(f"no such path '{dbRoot}'")
     databases=[]
     for dirName in next(os.walk(dbRoot))[1]:
+        if (dirName.startswith('.')):
+            continue
         path=os.path.join(dbRoot,dirName)
         invalidateFile=os.path.join(path,".invalidate")
         if os.path.exists(invalidateFile):
